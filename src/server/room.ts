@@ -12,6 +12,8 @@ import {
   clamp,
   otherSignal,
   type DisplayInfo,
+  type PlayFrame,
+  type PlayPackage,
   type RoomConfig,
   type RoomSnapshot,
   type Signal,
@@ -53,11 +55,13 @@ export class Room {
   startedAt: number | null = null;
   endsAt: number | null = null;
   finishedAt: number | null = null;
+  playPackage: PlayPackage | null = null;
   lastActivity = Date.now();
   rng: () => number = Math.random;
 
   private signals = new Map<string, Signal>();
   private timer: ReturnType<typeof setTimeout> | null = null;
+  private packageIndex = 0;
 
   constructor(code: string) {
     this.code = code;
@@ -170,8 +174,17 @@ export class Room {
     this.endsAt = now + this.config.durationSeconds * 1000;
     this.finishedAt = null;
     this.loneId = null;
+    this.playPackage = this.buildPlayPackage(ids, now, this.endsAt);
+    this.packageIndex = 0;
     this.touch();
-    this.showFrame(now);
+    const first = this.playPackage.frames[0];
+    if (!first) {
+      this.finish();
+      return;
+    }
+    this.applyFrame(first);
+    this.armPackage();
+    this.broadcast();
   }
 
   stop() {
@@ -182,39 +195,58 @@ export class Room {
     this.signals.clear();
     this.frameStartedAt = null;
     this.finishedAt = null;
+    this.playPackage = null;
+    this.packageIndex = 0;
     this.touch();
     this.broadcast();
   }
 
-  private showFrame(at: number) {
-    const ids = this.liveIds();
-    if (ids.length < MIN_TOTAL) {
-      this.finish();
-      return;
-    }
-    const lone = pickLone(ids, this.loneId, this.rng);
-    this.loneId = lone;
-    this.signals.clear();
+  private buildPlayPackage(ids: string[], startAt: number, endsAt: number): PlayPackage {
+    const intervalMs = this.config.intervalSeconds * 1000;
     const rest = otherSignal(LONE_SIGNAL);
-    for (const id of ids) this.signals.set(id, id === lone ? LONE_SIGNAL : rest);
-    this.controllerSignal = this.signals.get(CONTROLLER_ID) ?? null;
-    this.frameStartedAt = at;
-    this.broadcast();
-    this.arm();
+    const frames: PlayFrame[] = [];
+    let at = startAt;
+    let prevLone: string | null = null;
+    while (true) {
+      const lone = pickLone(ids, prevLone, this.rng);
+      prevLone = lone;
+      const signals: Record<string, Signal> = {};
+      for (const id of ids) signals[id] = id === lone ? LONE_SIGNAL : rest;
+      frames.push({ frameStartedAt: at, loneId: lone, signals });
+      const frameEnd = at + intervalMs;
+      if (frameEnd >= endsAt) break;
+      at = frameEnd;
+    }
+    return { intervalMs, endsAt, frames };
   }
 
-  private arm() {
+  private applyFrame(frame: PlayFrame) {
+    this.loneId = frame.loneId;
+    this.signals.clear();
+    for (const [id, signal] of Object.entries(frame.signals)) {
+      this.signals.set(id, signal);
+    }
+    this.controllerSignal = this.signals.get(CONTROLLER_ID) ?? null;
+    this.frameStartedAt = frame.frameStartedAt;
+  }
+
+  private armPackage() {
     this.clearTimer();
-    if (this.endsAt == null || this.frameStartedAt == null) return;
-    const intervalMs = this.config.intervalSeconds * 1000;
-    const frameEnd = this.frameStartedAt + intervalMs;
-    if (frameEnd >= this.endsAt) {
+    if (!this.playPackage || this.endsAt == null) return;
+    const nextIndex = this.packageIndex + 1;
+    if (nextIndex >= this.playPackage.frames.length) {
       const wait = Math.max(0, this.endsAt - Date.now());
       this.timer = setTimeout(() => this.finish(), wait);
       return;
     }
-    const wait = Math.max(0, frameEnd - Date.now());
-    this.timer = setTimeout(() => this.showFrame(frameEnd), wait);
+    const next = this.playPackage.frames[nextIndex];
+    const wait = Math.max(0, next.frameStartedAt - Date.now());
+    this.timer = setTimeout(() => {
+      this.packageIndex = nextIndex;
+      this.applyFrame(next);
+      this.armPackage();
+      this.broadcast();
+    }, wait);
   }
 
   private finish() {
@@ -225,6 +257,8 @@ export class Room {
     this.signals.clear();
     this.frameStartedAt = null;
     this.finishedAt = Date.now();
+    this.playPackage = null;
+    this.packageIndex = 0;
     this.touch();
     this.broadcast();
   }
@@ -252,6 +286,7 @@ export class Room {
       startedAt: this.startedAt,
       endsAt: this.endsAt,
       finishedAt: this.finishedAt,
+      playPackage: this.config.running ? this.playPackage : null,
       serverNow: Date.now(),
     };
   }

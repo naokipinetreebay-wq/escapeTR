@@ -19,17 +19,32 @@ export interface DisplayInfo {
   signal: Signal | null;
 }
 
+/** 開始時に一度配り、端末時計で再生する出題一式 */
+export interface PlayFrame {
+  frameStartedAt: number;
+  loneId: string;
+  signals: Record<string, Signal>;
+}
+
+export interface PlayPackage {
+  intervalMs: number;
+  endsAt: number;
+  frames: PlayFrame[];
+}
+
 export interface RoomSnapshot {
   code: string;
   config: RoomConfig;
   displays: DisplayInfo[];
   controllerSignal: Signal | null;
-  /** 今の赤（敵） */
+  /** 今の緑（空き） */
   loneId: string | null;
   frameStartedAt: number | null;
   startedAt: number | null;
   endsAt: number | null;
   finishedAt: number | null;
+  /** あるときは端末側再生の正本 */
+  playPackage: PlayPackage | null;
   serverNow: number;
 }
 

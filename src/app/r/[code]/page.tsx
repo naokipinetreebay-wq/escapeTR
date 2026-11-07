@@ -6,6 +6,7 @@ import { ColorScreen } from "@/components/ColorScreen";
 import { ControllerPanel } from "@/components/ControllerPanel";
 import { SetupWizard } from "@/components/SetupWizard";
 import { placementsFor } from "@/lib/placement";
+import { useKeepPlayView } from "@/lib/playView";
 import { useDeviceId, useRoomSocket } from "@/lib/ws";
 
 export default function ControllerPage() {
@@ -13,6 +14,7 @@ export default function ControllerPage() {
   const code = String(params.code || "").toUpperCase();
   const deviceId = useDeviceId(`controller-${code}`);
   const { snapshot, error, connected, send } = useRoomSocket(code, "controller", deviceId);
+  const playView = useKeepPlayView(snapshot, "controller");
 
   const wizardKey = `es-wizard-done-${code}`;
   const [ready, setReady] = useState(false);
@@ -73,16 +75,16 @@ export default function ControllerPage() {
     );
   }
 
-  if (view === "play" && snapshot.config.running) {
+  if (view === "play" && (snapshot.config.running || playView.running)) {
     const clock = placementsFor(snapshot.displays.length + 1)[0]?.clock;
     return (
       <ColorScreen
-        signal={snapshot.controllerSignal}
+        signal={playView.signal}
         title="この端末"
         detail={clock}
         sound={snapshot.config.sound}
-        frameStartedAt={snapshot.frameStartedAt}
-        running
+        frameStartedAt={playView.frameStartedAt}
+        running={playView.running || snapshot.config.running}
         onStop={() => {
           send({ type: "stop" });
           setView("control");
