@@ -1,17 +1,16 @@
 "use client";
 
-import { useParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { ColorScreen } from "@/components/ColorScreen";
 import { ControllerPanel } from "@/components/ControllerPanel";
 import { SetupWizard } from "@/components/SetupWizard";
 import { placementsFor } from "@/lib/placement";
 import { useKeepPlayView } from "@/lib/playView";
+import { useRoomCode } from "@/lib/roomCode";
 import { useDeviceId, useRoomSocket } from "@/lib/ws";
 
 export default function ControllerPage() {
-  const params = useParams<{ code: string }>();
-  const code = String(params.code || "").toUpperCase();
+  const code = useRoomCode();
   const deviceId = useDeviceId(`controller-${code}`);
   const { snapshot, error, connected, send } = useRoomSocket(code, "controller", deviceId);
   const playView = useKeepPlayView(snapshot, "controller");
