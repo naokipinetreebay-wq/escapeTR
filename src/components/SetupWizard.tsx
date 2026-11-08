@@ -1,5 +1,7 @@
 "use client";
 
+import { NumberSelect } from "@/components/NumberSelect";
+
 import { QRCodeSVG } from "qrcode.react";
 import { useMemo, useState } from "react";
 import { PlacementMap } from "@/components/PlacementMap";
@@ -87,24 +89,22 @@ export function SetupWizard({
             <h2>時間と音</h2>
             <label className="field">
               <span>切り替え: {cfg.intervalSeconds}秒</span>
-              <input
-                type="range"
+              <NumberSelect
                 min={MIN_INTERVAL}
                 max={MAX_INTERVAL}
                 step={1}
                 value={cfg.intervalSeconds}
-                onChange={(e) => patch({ intervalSeconds: Number(e.target.value) })}
+                onChange={(n) => patch({ intervalSeconds: n })}
               />
             </label>
             <label className="field">
               <span>練習: {cfg.durationSeconds}秒</span>
-              <input
-                type="range"
+              <NumberSelect
                 min={MIN_DURATION}
                 max={MAX_DURATION}
                 step={5}
                 value={cfg.durationSeconds}
-                onChange={(e) => patch({ durationSeconds: Number(e.target.value) })}
+                onChange={(n) => patch({ durationSeconds: n })}
               />
             </label>
             <div className="btn-row">
