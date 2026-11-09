@@ -52,8 +52,22 @@ export type ClientMessage =
   | { type: "hello"; role: Role; deviceId: string; label?: string }
   | { type: "updateConfig"; config: Partial<RoomConfig> }
   | { type: "setLabel"; deviceId: string; label: string }
-  | { type: "start" }
-  | { type: "stop" }
+  | { type: "start"; local?: boolean }
+  | { type: "stop"; finished?: boolean }
+  | {
+      type: "hostPush";
+      overlay: {
+        playPackage?: PlayPackage | null;
+        controllerSignal?: Signal | null;
+        loneId?: string | null;
+        frameStartedAt?: number | null;
+        startedAt?: number | null;
+        endsAt?: number | null;
+        finishedAt?: number | null;
+        signals?: Record<string, Signal>;
+        hostNow?: number;
+      };
+    }
   | { type: "ping" };
 
 export type ServerMessage =

@@ -56,6 +56,18 @@ export class Room {
   endsAt: number | null = null;
   finishedAt: number | null = null;
   playPackage: PlayPackage | null = null;
+  localHost = true;
+  hostOverlay: {
+    playPackage?: PlayPackage | null;
+    controllerSignal?: Signal | null;
+    loneId?: string | null;
+    frameStartedAt?: number | null;
+    startedAt?: number | null;
+    endsAt?: number | null;
+    finishedAt?: number | null;
+    signals?: Record<string, Signal>;
+    hostNow?: number;
+  } | null = null;
   lastActivity = Date.now();
   rng: () => number = Math.random;
 
@@ -156,7 +168,7 @@ export class Room {
     return [...this.controllers].some((socket) => socket.readyState === WebSocket.OPEN);
   }
 
-  start() {
+  start(local = true) {
     const ids = this.liveIds();
     const peripherals = ids.filter((id) => id !== CONTROLLER_ID);
     if (!this.hasController() || peripherals.length < 1 || ids.length < MIN_TOTAL || this.displays.size > MAX_PERIPHERALS) {
@@ -170,33 +182,61 @@ export class Room {
     this.clearTimer();
     const now = Date.now();
     this.config.running = true;
+    this.localHost = local !== false;
     this.startedAt = now;
     this.endsAt = now + this.config.durationSeconds * 1000;
     this.finishedAt = null;
     this.loneId = null;
-    this.playPackage = this.buildPlayPackage(ids, now, this.endsAt);
+    this.playPackage = null;
     this.packageIndex = 0;
+    this.hostOverlay = null;
+    this.controllerSignal = null;
+    this.signals.clear();
+    this.frameStartedAt = null;
     this.touch();
-    const first = this.playPackage.frames[0];
-    if (!first) {
-      this.finish();
-      return;
+    if (!this.localHost) {
+      this.playPackage = this.buildPlayPackage(ids, now, this.endsAt);
+      const first = this.playPackage.frames[0];
+      if (!first) {
+        this.finish();
+        return;
+      }
+      this.applyFrame(first);
+      this.armPackage();
     }
-    this.applyFrame(first);
-    this.armPackage();
     this.broadcast();
   }
 
-  stop() {
+  stop(finished = false) {
     this.clearTimer();
     this.config.running = false;
     this.controllerSignal = null;
     this.loneId = null;
     this.signals.clear();
     this.frameStartedAt = null;
-    this.finishedAt = null;
+    this.finishedAt = finished ? Date.now() : null;
     this.playPackage = null;
     this.packageIndex = 0;
+    this.hostOverlay = null;
+    this.touch();
+    this.broadcast();
+  }
+
+  hostPush(overlay: NonNullable<Room["hostOverlay"]>) {
+    this.hostOverlay = { ...(this.hostOverlay || {}), ...overlay };
+    if (overlay.playPackage !== undefined) this.playPackage = overlay.playPackage;
+    if (overlay.signals) {
+      this.signals.clear();
+      for (const [id, signal] of Object.entries(overlay.signals)) {
+        this.signals.set(id, signal);
+      }
+      this.controllerSignal = overlay.signals[CONTROLLER_ID] ?? null;
+    }
+    if (overlay.loneId !== undefined) this.loneId = overlay.loneId;
+    if (overlay.frameStartedAt !== undefined) this.frameStartedAt = overlay.frameStartedAt;
+    if (overlay.startedAt !== undefined) this.startedAt = overlay.startedAt;
+    if (overlay.endsAt !== undefined) this.endsAt = overlay.endsAt;
+    if (overlay.finishedAt !== undefined) this.finishedAt = overlay.finishedAt;
     this.touch();
     this.broadcast();
   }
@@ -250,17 +290,7 @@ export class Room {
   }
 
   private finish() {
-    this.clearTimer();
-    this.config.running = false;
-    this.controllerSignal = null;
-    this.loneId = null;
-    this.signals.clear();
-    this.frameStartedAt = null;
-    this.finishedAt = Date.now();
-    this.playPackage = null;
-    this.packageIndex = 0;
-    this.touch();
-    this.broadcast();
+    this.stop(true);
   }
 
   private clearTimer() {
@@ -269,25 +299,37 @@ export class Room {
   }
 
   snapshot(): RoomSnapshot {
+    const host = this.hostOverlay;
+    const running = this.config.running;
     const displays: DisplayInfo[] = [...this.displays.values()].map((d) => ({
       id: d.id,
       label: d.label,
       place: d.place,
       connected: !!d.socket && d.socket.readyState === WebSocket.OPEN,
-      signal: this.config.running ? (this.signals.get(d.id) ?? null) : null,
+      signal: running
+        ? (host?.signals?.[d.id] ?? this.signals.get(d.id) ?? null)
+        : null,
     }));
     return {
       code: this.code,
       config: this.config,
       displays,
-      controllerSignal: this.config.running ? this.controllerSignal : null,
-      loneId: this.config.running ? this.loneId : null,
-      frameStartedAt: this.config.running ? this.frameStartedAt : null,
-      startedAt: this.startedAt,
-      endsAt: this.endsAt,
-      finishedAt: this.finishedAt,
-      playPackage: this.config.running ? this.playPackage : null,
-      serverNow: Date.now(),
+      controllerSignal: running
+        ? host?.controllerSignal !== undefined
+          ? host.controllerSignal
+          : this.controllerSignal
+        : null,
+      loneId: running ? (host?.loneId ?? this.loneId) : null,
+      frameStartedAt: running ? (host?.frameStartedAt ?? this.frameStartedAt) : null,
+      startedAt: host?.startedAt ?? this.startedAt,
+      endsAt: host?.endsAt ?? this.endsAt,
+      finishedAt: host?.finishedAt !== undefined ? host.finishedAt : this.finishedAt,
+      playPackage: running
+        ? host?.playPackage !== undefined
+          ? host.playPackage
+          : this.playPackage
+        : null,
+      serverNow: host?.hostNow ?? Date.now(),
     };
   }
 

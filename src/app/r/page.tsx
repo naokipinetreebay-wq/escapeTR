@@ -5,6 +5,7 @@ import { ColorScreen } from "@/components/ColorScreen";
 import { ControllerPanel } from "@/components/ControllerPanel";
 import { SetupWizard } from "@/components/SetupWizard";
 import { placementsFor } from "@/lib/placement";
+import { useKeepLocalHost } from "@/lib/localHost";
 import { useKeepPlayView } from "@/lib/playView";
 import { useRoomCode } from "@/lib/roomCode";
 import { useDeviceId, useRoomSocket } from "@/lib/ws";
@@ -13,6 +14,7 @@ export default function ControllerPage() {
   const code = useRoomCode();
   const deviceId = useDeviceId(`controller-${code}`);
   const { snapshot, error, connected, send } = useRoomSocket(code, "controller", deviceId);
+  const { startLocal, stopLocal } = useKeepLocalHost(snapshot, send);
   const playView = useKeepPlayView(snapshot, "controller");
 
   const wizardKey = `es-wizard-done-${code}`;
@@ -31,9 +33,9 @@ export default function ControllerPage() {
     const online = snapshot.displays.filter((d) => d.connected).length;
     if (!connected || online < 1) return;
     pendingStart.current = false;
-    send({ type: "start" });
+    startLocal();
     setView("play");
-  }, [connected, ready, send, snapshot]);
+  }, [connected, ready, snapshot, startLocal]);
 
   useEffect(() => {
     if (snapshot && snapshot.finishedAt != null && !snapshot.config.running) setView("control");
@@ -85,7 +87,7 @@ export default function ControllerPage() {
         frameStartedAt={playView.frameStartedAt}
         running={playView.running || snapshot.config.running}
         onStop={() => {
-          send({ type: "stop" });
+          stopLocal();
           setView("control");
         }}
       />
@@ -99,7 +101,14 @@ export default function ControllerPage() {
         connected={connected}
         send={send}
         clearSessionKeys={[wizardKey]}
-        onStart={() => setView("play")}
+        onStart={() => {
+          startLocal();
+          setView("play");
+        }}
+        onStop={() => {
+          stopLocal();
+          setView("control");
+        }}
       />
       <div className="controller" style={{ paddingTop: 0 }}>
         <button
